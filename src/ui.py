@@ -1064,10 +1064,6 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         for idx, attr in enumerate(attributes):
             grid_row = idx + 2 # Offset by header + separator
             
-            # Create row container
-            row_frame = ctk.CTkFrame(table_scroll, fg_color="transparent")
-            row_frame.grid(row=grid_row, column=0, columnspan=7, sticky="ew")
-
             id_val = attr.get('id')
             id_hex = f"{id_val:02X}"
             name = attr.get("name", "Unknown").replace("_", " ")
@@ -1107,12 +1103,9 @@ class DiskDetailsWindow(ctk.CTkToplevel):
                  status_fg = "#e74c3c"
                  status_icon = "✖ Failure Predicted"
             
-            # Reconstruct grid relative to the row frame
-            for i in range(7): row_frame.grid_columnconfigure(i, weight=1)
-
             widgets = [id_hex, status_icon, name, str(curr), str(worst), str(thresh), raw]
             for c_idx, val in enumerate(widgets):
-                lbl = ctk.CTkLabel(row_frame, text=val, font=("Segoe UI", 12))
+                lbl = ctk.CTkLabel(table_scroll, text=val, font=("Segoe UI", 12))
                 
                 # Align columns: Left for Status, Name, Raw; Center for others
                 align = "w" if c_idx in [1, 2, 6] else "center"
@@ -1125,8 +1118,8 @@ class DiskDetailsWindow(ctk.CTkToplevel):
                 elif c_idx == 2: # Name
                      pass # Normal
                 
-                lbl.grid(row=0, column=c_idx, sticky="ew", padx=2, pady=1)
-                
+                # Use grid_row instead of 0
+                lbl.grid(row=grid_row, column=c_idx, sticky="ew", padx=2, pady=1)
 
                 # Add tooltip for status if warning
                 if c_idx == 1 and status != "OK":
