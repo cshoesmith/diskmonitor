@@ -115,7 +115,13 @@ class DiskHealthMonitor:
         try:
             # --scan-open works on many platforms to find devices
             cmd = [self.smartctl_path, "--scan-open", "--json"]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            # Use CREATE_NO_WINDOW on Windows to prevent flashing cmd prompts
+            kwargs = {}
+            if sys.platform == 'win32':
+                 kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                 
+            result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
             if result.returncode == 0:
                 data = json.loads(result.stdout)
                 devices = data.get("devices", [])
@@ -135,7 +141,13 @@ class DiskHealthMonitor:
         else:
             try:
                 cmd = [self.smartctl_path, "-a", device, "--json"]
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Use CREATE_NO_WINDOW on Windows to prevent flashing cmd prompts
+                kwargs = {}
+                if sys.platform == 'win32':
+                     kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
+                result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
                 if result.stdout:
                     data = json.loads(result.stdout)
             except Exception as e:

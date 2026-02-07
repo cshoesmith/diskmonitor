@@ -717,6 +717,11 @@ class DiskDetailsWindow(ctk.CTkToplevel):
             canvas.get_tk_widget().pack(fill="both", expand=True, padx=20)
         
         # --- IO LOAD CHART ---
+        io_container = ctk.CTkFrame(self, fg_color="transparent")
+        io_container.pack(fill="x", padx=10, pady=(0, 10))
+        
+        ctk.CTkLabel(io_container, text="I/O Load History (Last 60 samples)", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+
         io_history = []
         if serial != "Unknown" and self.history:
               try:
@@ -725,11 +730,6 @@ class DiskDetailsWindow(ctk.CTkToplevel):
                   print(f"Chart data error: {e}")
               
         if io_history and len(io_history) > 1:
-             io_container = ctk.CTkFrame(self, fg_color="transparent")
-             io_container.pack(fill="x", padx=10, pady=(0, 10))
-             
-             ctk.CTkLabel(io_container, text="I/O Load History (Last 60 samples)", font=("Segoe UI", 12, "bold")).pack(anchor="w")
-             
              chart_frame = ctk.CTkFrame(io_container, fg_color="transparent")
              chart_frame.pack(fill="x", expand=True)
              
@@ -763,6 +763,10 @@ class DiskDetailsWindow(ctk.CTkToplevel):
              canvas = FigureCanvasTkAgg(fig, master=chart_frame)
              canvas.draw()
              canvas.get_tk_widget().pack(fill="both", expand=True)
+        else:
+             info_frame = ctk.CTkFrame(io_container, fg_color="#e0e0e0", height=60, corner_radius=6)
+             info_frame.pack(fill="x", pady=5)
+             ctk.CTkLabel(info_frame, text="Computing I/O statistics... (Need > 1 sample)", text_color="#555555").place(relx=0.5, rely=0.5, anchor="center")
 
         # --- SMART TABLE ---
         table_container = ctk.CTkFrame(self)
