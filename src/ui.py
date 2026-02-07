@@ -1012,7 +1012,9 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         # HEADERS (Inside ScrollFrame for perfect alignment)
         cols = ["ID", "Status", "Attribute Name", "Current", "Worst", "Threshold", "Raw Values"]
         for i, c in enumerate(cols):
+             align = "w" if i in [1, 2, 6] else "center"
              lbl = ctk.CTkLabel(table_scroll, text=c, font=("Segoe UI", 12, "bold"), fg_color="transparent")
+             lbl.configure(anchor=align)
              lbl.grid(row=0, column=i, sticky="ew", padx=2, pady=5)
              
         # Add visual separator below header
@@ -1112,6 +1114,10 @@ class DiskDetailsWindow(ctk.CTkToplevel):
             for c_idx, val in enumerate(widgets):
                 lbl = ctk.CTkLabel(row_frame, text=val, font=("Segoe UI", 12))
                 
+                # Align columns: Left for Status, Name, Raw; Center for others
+                align = "w" if c_idx in [1, 2, 6] else "center"
+                lbl.configure(anchor=align)
+
                 if c_idx == 0: # ID
                      lbl.configure(font=("Segoe UI", 12, "bold"))
                 elif c_idx == 1: # Status
