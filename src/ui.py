@@ -479,14 +479,38 @@ class DiskMonitorApp:
         image = Image.new('RGBA', (width, height), (0,0,0,0))
         dc = ImageDraw.Draw(image)
         
-        fill_color = (0, 255, 0, 255)
-        if color == "red":
-            fill_color = (255, 0, 0, 255)
-        elif color == "yellow":
-            fill_color = (255, 255, 0, 255)
+        # Color Palette (Flat UI colors)
+        colors = {
+            "green": (46, 204, 113, 255),  # Green
+            "yellow": (243, 156, 18, 255), # Orange/Yellow
+            "red": (231, 76, 60, 255)      # Red
+        }
         
-        # Draw circle
-        dc.ellipse((8, 8, 56, 56), fill=fill_color, outline=(0,0,0,255))
+        # Default to green if unknown
+        base_color = colors.get(color, colors["green"])
+        outline_color = (50, 50, 50, 255)
+        
+        # Draw HDD Body (Main Rectangle)
+        # x0, y0, x1, y1
+        body_rect = [14, 10, 50, 54] 
+        dc.rectangle(body_rect, fill=base_color, outline=outline_color, width=3)
+        
+        # Draw "Label" area (White sticker on the drive)
+        label_rect = [19, 15, 45, 36]
+        dc.rectangle(label_rect, fill=(245, 245, 245, 255), outline=None)
+        
+        # Draw Platter/Spindle circle hint inside label to make it recognizable
+        # Circle center (32, 25) radius 6
+        cx, cy, r = 32, 25, 6
+        dc.ellipse([cx-r, cy-r, cx+r, cy+r], outline=(180, 180, 180, 255), width=2)
+        dc.ellipse([cx-1, cy-1, cx+1, cy+1], fill=(100, 100, 100, 255))
+        
+        # Bottom "Pins" or PCB hint (Little dark blocks at bottom)
+        # To give it some tech texture
+        dc.rectangle([18, 42, 24, 46], fill=(40, 40, 40, 180))
+        dc.rectangle([29, 42, 35, 46], fill=(40, 40, 40, 180))
+        dc.rectangle([40, 42, 46, 46], fill=(40, 40, 40, 180))
+
         return image
 
     def _monitor_loop(self):
