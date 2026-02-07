@@ -2,6 +2,7 @@ import sys
 import os
 import threading
 import traceback
+import subprocess
 
 def is_admin():
     try:
@@ -40,7 +41,19 @@ def main():
 
     if not is_admin():
         if sys.platform == 'win32':
-            # Attempt to automatically elevate privileges
+            # 1. OPTION A: Try to hand off to Silent Scheduled Task (No UAC)
+            try:
+                # Check if the "Bypass UAC" task exists
+                devnull = open(os.devnull, 'w')
+                if subprocess.call('schtasks /query /tn "DiskMonitorAutoStart"', shell=True, stdout=devnull, stderr=devnull) == 0:
+                     # Task exists! Trigger it and exit.
+                     # This launches the app via Task Scheduler with Highest Privileges silently.
+                     subprocess.call('schtasks /run /tn "DiskMonitorAutoStart"', shell=True, stdout=devnull, stderr=devnull)
+                     sys.exit(0) 
+            except Exception:
+                pass
+
+            # 2. OPTION B: Attempt to automatically elevate privileges (Triggers UAC)
             try:
                 import ctypes
                 script = os.path.abspath(sys.argv[0])
