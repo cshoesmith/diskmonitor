@@ -142,32 +142,53 @@ class DiskMonitorApp:
         self._refresh_dashboard()
 
     def _setup_static_ui(self):
-        # Title Frame (Header + Toggle)
+        # Title Frame (Header Only)
         header_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=(15, 10))
 
         header = ctk.CTkLabel(header_frame, text="Disk Health Dashboard", font=("Segoe UI", 20, "bold"))
         header.pack(side="left")
 
-        # Toggle Switch for Hidden Drives
+        # Main Table Container
+        self.table_frame = ctk.CTkFrame(self.root)
+        self.table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Footer Frame (Refresh, Hidden Toggle, About)
+        footer_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        footer_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+        # Toggle Switch for Hidden Drives (Left)
         toggle_val = ctk.BooleanVar(value=self.show_hidden_drives)
         switch = ctk.CTkSwitch(
-            header_frame, 
+            footer_frame, 
             text="Show Hidden Drives", 
             command=self.toggle_hidden_drives,
             variable=toggle_val,
             onvalue=True,
             offvalue=False
         )
-        switch.pack(side="right")
-        
-        # Main Table Container
-        self.table_frame = ctk.CTkFrame(self.root)
-        self.table_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
+        switch.pack(side="left")
+
+        # Right side controls container
+        right_controls = ctk.CTkFrame(footer_frame, fg_color="transparent")
+        right_controls.pack(side="right")
+
         # Manual refresh button
-        btn = ctk.CTkButton(self.root, text="Refresh Now", command=self._refresh_dashboard)
-        btn.pack(pady=10)
+        btn_refresh = ctk.CTkButton(right_controls, text="Refresh Now", command=self._refresh_dashboard)
+        btn_refresh.pack(side="left", padx=(0, 10))
+
+        # About Button
+        btn_about = ctk.CTkButton(
+            right_controls, 
+            text="About", 
+            fg_color="transparent", 
+            border_width=1, 
+            border_color=("gray70", "gray30"),
+            text_color=("gray10", "gray90"), 
+            width=60,
+            command=lambda: AboutWindow(self.root)
+        )
+        btn_about.pack(side="left")
 
         self.ui_setup_done = True
 
@@ -398,7 +419,7 @@ class DiskMonitorApp:
         if msgs:
             tooltip_text = "\n".join(msgs)
         elif score < 100:
-             tooltip_text = f"Health Score: {score}%\nCheck details for standard attributes."
+             tooltip_text = f"Health Score: {score}%\nCheck details for health indicators."
         
         ToolTip(status_btn, text=tooltip_text)
 
@@ -583,6 +604,45 @@ class DiskMonitorApp:
         self.root.quit()
         sys.exit()
 
+class AboutWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("About Disk Health Monitor")
+        self.geometry("400x320")
+        self.resizable(False, False)
+        
+        # Make modal
+        self.attributes("-topmost", True)
+        self.grab_set()
+
+        # Content Container
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Title
+        title_lbl = ctk.CTkLabel(container, text="Disk Health Monitor", font=("Segoe UI", 20, "bold"))
+        title_lbl.pack(pady=(10, 5))
+
+        # Version
+        ver_lbl = ctk.CTkLabel(container, text="Version 1.0.0", font=("Segoe UI", 12))
+        ver_lbl.pack(pady=(0, 20))
+
+        # Info
+        info_text = (
+            "A comprehensive disk health monitoring tool.\n"
+            "Provides real-time S.M.A.R.T data analysis\n"
+            "and partition visualization.\n\n"
+            "Author: Chris Shoesmith\n"
+            "License: MIT License"
+        )
+        info_lbl = ctk.CTkLabel(container, text=info_text, font=("Segoe UI", 13), justify="center")
+        info_lbl.pack(pady=10)
+
+        # Close Button
+        close_btn = ctk.CTkButton(container, text="Close", command=self.destroy, width=100)
+        close_btn.pack(side="bottom", pady=10)
+
+
 class DiskDetailsWindow(ctk.CTkToplevel):
     def __init__(self, parent, data, history_manager=None):
         super().__init__(parent)
@@ -618,15 +678,19 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         self.title(f"{model} - Disk Details")
         self.geometry("1100x800")
         
+        # --- SCROLLABLE MAIN CONTAINER ---
+        self.main_scroll = ctk.CTkScrollableFrame(self)
+        self.main_scroll.pack(fill="both", expand=True)
+
         # --- TOP HEADER (Model Name) ---
-        header_frame = ctk.CTkFrame(self)
+        header_frame = ctk.CTkFrame(self.main_scroll)
         header_frame.pack(fill="x", padx=10, pady=10)
         
         ctk.CTkLabel(header_frame, text=f"{model} : {capacity}", font=("Segoe UI", 24, "bold")).pack(side="left", padx=10)
         ctk.CTkLabel(header_frame, text="Disk Health Monitor", font=("Segoe UI", 12)).pack(side="right", padx=10)
 
         # --- INFO GRID (Firmware, Serial, etc) ---
-        info_frame = ctk.CTkFrame(self)
+        info_frame = ctk.CTkFrame(self.main_scroll)
         info_frame.pack(fill="x", padx=10, pady=5)
         
         # Left Side (Big Status buttons)
@@ -659,11 +723,41 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         if conn_detail:
             interface_val = f"{conn_detail.get('type')} ({'External' if conn_detail.get('is_external') else 'Internal'})"
 
+        # --- EXTRACT HEALTH METRICS ---
+        attributes = data.get("ata_smart_attributes", {}).get("table", [])
+        nvme_log = data.get("nvme_smart_health_information_log", {})
+        
+        # 1. Total Written (TB)
+        # NVMe: 'data_units_written' is typically 512*1000 bytes OR 512 bytes reported in thou units?
+        # Smartctl man page says: "value reported in thousands (i.e. 1 = 512,000 bytes)"
+        # So raw_val * 512,000 = bytes.
+        tbw_str = "Unknown"
+        if nvme_log and "data_units_written" in nvme_log:
+             units = nvme_log["data_units_written"]
+             tb_val = (units * 512000) / (1024**4)
+             tbw_str = f"{tb_val:.2f} TB"
+        
+        # 2. SSD Life
+        ssd_life_str = "N/A"
+        if nvme_log and "percentage_used" in nvme_log:
+             ssd_life_str = f"{100 - nvme_log['percentage_used']}%"
+        else:
+             # Try determining from ATA
+             for aid in [231, 233, 169, 177]: # Common Life Left IDs
+                 for a in attributes:
+                     if a.get("id") == aid:
+                         val = a.get("value", 100)
+                         if 0 < val <= 100: 
+                             ssd_life_str = f"{val}%"
+                             break
+                 if ssd_life_str != "N/A": break
+
         rows = [
             ("Firmware", firmware), ("Serial Number", serial),
             ("Rotation Rate", str(rot_rate)), ("Power On Count", str(power_count)),
             ("Interface", interface_val), ("Power On Hours", f"{power_hours}h ({power_hours/24:.1f} days)"),
-            ("Standard", "ACS-3 / ATA8-ACS"), ("Features", "S.M.A.R.T.")
+            ("Standard", "ACS-3 / ATA8-ACS"), ("Features", "S.M.A.R.T."),
+            ("Total Writes", tbw_str), ("SSD Life Left", ssd_life_str)
         ]
         
         for i, (label, val) in enumerate(rows):
@@ -681,45 +775,166 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         partitions = data.get("partitions", [])
         if partitions:
             # Container for Chart stuff logic
-            part_container = ctk.CTkFrame(self, fg_color="transparent")
+            part_container = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
             part_container.pack(fill="x", padx=10, pady=10)
             
-            ctk.CTkLabel(part_container, text="Partition Usage", font=("Segoe UI", 14, "bold")).pack(anchor="w")
+            ctk.CTkLabel(part_container, text="Partition Map", font=("Segoe UI", 14, "bold")).pack(anchor="w")
             
             # Chart Area
             chart_area = ctk.CTkFrame(part_container, fg_color="transparent")
             chart_area.pack(fill="x", expand=True)
 
-            colors = ["#0078D7", "#2B88D8", "#60A5FA", "#93C5FD", "#104a8e", "#005a9e"]
+            colors = ["#005a9e", "#0078D7", "#2B88D8", "#60A5FA", "#93C5FD", "#104a8e"]
             
             sizes = [p["size_gb"] for p in partitions]
-            labels = [f"{p['number']} ({p['size_gb']} GB)" for p in partitions]
             
+            # Visual Sizing Logic: Ensure minimum width for small partitions
+            visual_sizes = []
             if not sizes or sum(sizes) == 0:
                  sizes = [1]
+                 visual_sizes = [1]
                  labels = ["Empty"]
                  colors = ["gray"]
+            else:
+                 total_raw = sum(sizes)
+                 min_share = 0.05 # Reserve at least 5% width for visibility
+                 
+                 # Calculate raw shares
+                 raw_shares = [s / total_raw for s in sizes]
+                 
+                 # Apply minimum floor
+                 adj_shares = [max(s, min_share) for s in raw_shares]
+                 
+                 # Re-normalize to sum to 1.0
+                 total_adj = sum(adj_shares)
+                 visual_sizes = [s / total_adj for s in adj_shares]
+                 
+                 # Prepare labels
+                 labels = []
+                 for p in partitions:
+                     l_txt = f"Part {p['number']}\n{p['size_gb']} GB"
+                     labels.append(l_txt)
 
-            # Create Figure - Wider to fit legend
-            fig = matplotlib.figure.Figure(figsize=(8, 3), dpi=100)
-            fig.patch.set_facecolor('#dbdbdb') 
+            # Create Figure - Wide and short
+            fig = matplotlib.figure.Figure(figsize=(8, 1.2), dpi=100)
+            # Use 'transparent' or match the CTK theme background roughly
+            # Since CTK theming is complex, we stick to a neutral gray or white.
+            # However, for a "Disk Administrator" look, white or control-color is best.
+            fig.patch.set_color('#f0f0f0') 
+            
+            # Remove margins
+            fig.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.05)
             
             ax = fig.add_subplot(111)
-            wedges, texts = ax.pie(sizes, colors=colors, startangle=90, 
-                                   wedgeprops={"edgecolor":"white", 'linewidth': 1, 'antialiased': True})
-            ax.axis('equal') 
+            ax.set_facecolor('#f0f0f0') # Background
             
-            # Legend inside the figure
-            ax.legend(wedges, labels, title="Partitions", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
-            fig.subplots_adjust(right=0.7) # Make room for legend
+            # Draw Horizontal Stacked Bar
+            y_pos = [0]
+            left = 0
+            
+            bar_patches = []
+            tooltip_texts = []
+            text_labels = [] # To store text objects
+            
+            for i, v_size in enumerate(visual_sizes):
+                c = colors[i % len(colors)]
+                # Bar renders with VISUAL size
+                bars = ax.barh(y_pos, v_size, left=left, height=0.8, color=c, edgecolor='white', linewidth=1)
+                bar_patch = bars.patches[0]
+                bar_patches.append(bar_patch)
+                
+                # Tooltip Text (Real Data, not visual size)
+                p_num = "N/A"
+                if i < len(partitions):
+                    p_num = partitions[i]['number']
+                
+                real_size = 0
+                if i < len(sizes): real_size = sizes[i]
+                
+                tt = f"Partition {p_num}\nSize: {real_size} GB"
+                if labels[i] == "Empty": tt = "Empty / Unallocated"
+                tooltip_texts.append(tt)
+
+                # Label logic: Only if bar is wide enough to read
+                # Since we enforce min width, we can check granularity
+                mid_x = left + (v_size / 2)
+                
+                lbl_text = ""
+                font_s = 9
+                
+                if v_size > 0.15:
+                    lbl_text = labels[i] # Full label
+                elif v_size > 0.04: # ALLOW SMALLER BARS
+                    # Compact label
+                    if labels[i] != "Empty":
+                         if i < len(partitions):
+                              lbl_text = f"P{partitions[i]['number']}"
+                    else:
+                        lbl_text = "Empty"
+                    font_s = 7 # Small font for small bars
+                
+                if lbl_text:
+                     t_obj = ax.text(mid_x, 0, lbl_text, ha='center', va='center', 
+                                     color='white', fontweight='bold', fontsize=font_s)
+                     # Determine which index this text belongs to
+                     # Store as tuple (text_artist, index)
+                     text_labels.append( (t_obj, i) )
+                
+                left += v_size
+
+            # Clean up axes (Hide everything)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(-0.5, 0.5)
+            ax.axis('off')
+
+            # Tooltip Annotation
+            annot = ax.annotate("", xy=(0,0), xytext=(0,10), textcoords="offset points",
+                                bbox=dict(boxstyle="round", fc="#333333", ec="none", alpha=0.9),
+                                color="white", ha='center', fontsize=8)
+            annot.set_visible(False)
+
+            def update_annot(x, y, idx):
+                annot.xy = (x, y)
+                annot.set_text(tooltip_texts[idx])
+
+            def hover(event):
+                vis = annot.get_visible()
+                if event.inaxes == ax:
+                    # Check text labels first (they are on top)
+                    for t_obj, idx in text_labels:
+                        cont, _ = t_obj.contains(event)
+                        if cont:
+                             update_annot(event.xdata, event.ydata, idx)
+                             annot.set_visible(True)
+                             canvas.draw_idle()
+                             return
+
+                    # Check bars
+                    for i, bar in enumerate(bar_patches):
+                        cont, _ = bar.contains(event)
+                        if cont:
+                            # Center tooltip on bar center
+                            x = bar.get_x() + bar.get_width() / 2
+                            y = bar.get_y() + bar.get_height() / 2
+                            update_annot(x, y, i)
+                            annot.set_visible(True)
+                            canvas.draw_idle()
+                            return
+                            
+                if vis:
+                    annot.set_visible(False)
+                    canvas.draw_idle()
 
             # Canvas
             canvas = FigureCanvasTkAgg(fig, master=chart_area)
             canvas.draw()
             canvas.get_tk_widget().pack(fill="both", expand=True, padx=20)
-        
+            
+            # Connect hover event
+            canvas.mpl_connect("motion_notify_event", hover)
+
         # --- IO LOAD CHART ---
-        io_container = ctk.CTkFrame(self, fg_color="transparent")
+        io_container = ctk.CTkFrame(self.main_scroll, fg_color="transparent")
         io_container.pack(fill="x", padx=10, pady=(0, 10))
         
         ctk.CTkLabel(io_container, text="I/O Load History (Last 60 samples)", font=("Segoe UI", 12, "bold")).pack(anchor="w")
@@ -735,44 +950,57 @@ class DiskDetailsWindow(ctk.CTkToplevel):
              chart_frame = ctk.CTkFrame(io_container, fg_color="transparent")
              chart_frame.pack(fill="x", expand=True)
              
-             y_vals = [x[1] for x in io_history]
-             x_vals = range(len(y_vals))
-             
-             # Create Figure
-             fig = matplotlib.figure.Figure(figsize=(8, 1.5), dpi=100)
-             fig.patch.set_facecolor('#f0f0f0') # Matches default CTK light gray approx
-             fig.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.15)
-             
-             ax = fig.add_subplot(111)
-             # Set background of plot area
-             ax.set_facecolor('#ffffff')
-             
-             # Plot Line
-             ax.plot(x_vals, y_vals, color="#2980b9", linewidth=1.5)
-             ax.fill_between(x_vals, y_vals, color="#3498db", alpha=0.2)
-             
-             # Y Axis formatted
-             ax.set_ylim(0, 105)
-             ax.set_yticks([0, 25, 50, 75, 100])
-             ax.tick_params(labelsize=8)
-             
-             # Grid
-             ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
-             
-             # Hide X Axis labels (just show trend)
-             ax.set_xticks([])
+             try:
+                 # Clean data: Handle None values from DB migration
+                 y_vals = [(x[1] if x[1] is not None else 0.0) for x in io_history]
+                 x_vals = range(len(y_vals))
+                 
+                 # Create Figure
+                 fig = matplotlib.figure.Figure(figsize=(8, 1.5), dpi=100)
+                 fig.patch.set_facecolor('#f0f0f0') # Matches default CTK light gray approx
+                 fig.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.15)
+                 
+                 ax = fig.add_subplot(111)
+                 # Set background of plot area
+                 ax.set_facecolor('#ffffff')
+                 
+                 # Plot Line
+                 ax.plot(x_vals, y_vals, color="#2980b9", linewidth=1.5)
+                 ax.fill_between(x_vals, y_vals, color="#3498db", alpha=0.2)
+                 
+                 # Y Axis formatted
+                 ax.set_ylim(0, 105)
+                 ax.set_yticks([0, 25, 50, 75, 100])
+                 ax.tick_params(labelsize=8)
+                 
+                 # Grid
+                 ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+                 
+                 # Hide X Axis labels (just show trend)
+                 ax.set_xticks([])
 
-             canvas = FigureCanvasTkAgg(fig, master=chart_frame)
-             canvas.draw()
-             canvas.get_tk_widget().pack(fill="both", expand=True)
+                 canvas = FigureCanvasTkAgg(fig, master=chart_frame)
+                 canvas.draw()
+                 canvas.get_tk_widget().pack(fill="both", expand=True)
+             except Exception as e:
+                 print(f"Plotting error: {e}")
+                 chart_frame.destroy()
+                 # Fallback to info frame
+                 info_frame = ctk.CTkFrame(io_container, fg_color="#e0e0e0", height=60, corner_radius=6)
+                 info_frame.pack(fill="x", pady=5)
+                 info_frame.pack_propagate(False) # Force height
+                 ctk.CTkLabel(info_frame, text=f"Error display statistics", text_color="red").place(relx=0.5, rely=0.5, anchor="center")
         else:
              info_frame = ctk.CTkFrame(io_container, fg_color="#e0e0e0", height=60, corner_radius=6)
              info_frame.pack(fill="x", pady=5)
-             ctk.CTkLabel(info_frame, text="Computing I/O statistics... (Need > 1 sample)", text_color="#555555").place(relx=0.5, rely=0.5, anchor="center")
+             info_frame.pack_propagate(False) # Force height
+             ctk.CTkLabel(info_frame, text="Computing I/O statistics... (Gathering samples)", text_color="#333333").place(relx=0.5, rely=0.5, anchor="center")
 
         # --- SMART TABLE ---
-        table_container = ctk.CTkFrame(self)
+        table_container = ctk.CTkFrame(self.main_scroll)
         table_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        ctk.CTkLabel(table_container, text="Detailed S.M.A.R.T. Statistics (Advanced)", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=5, pady=5)
         
         table_scroll = ctk.CTkScrollableFrame(table_container, fg_color="transparent")
         table_scroll.pack(fill="both", expand=True)
@@ -791,7 +1019,8 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         sep = ctk.CTkFrame(table_scroll, height=2, fg_color="gray50")
         sep.grid(row=1, column=0, columnspan=7, sticky="ew", pady=(0, 5))
 
-        attributes = data.get("ata_smart_attributes", {}).get("table", [])
+        # We already extracted these earlier for the header metrics
+        # attributes = data.get("ata_smart_attributes", {}).get("table", [])
         
         # 1. ATA Support
         if not attributes:
@@ -833,6 +1062,10 @@ class DiskDetailsWindow(ctk.CTkToplevel):
         for idx, attr in enumerate(attributes):
             grid_row = idx + 2 # Offset by header + separator
             
+            # Create row container
+            row_frame = ctk.CTkFrame(table_scroll, fg_color="transparent")
+            row_frame.grid(row=grid_row, column=0, columnspan=7, sticky="ew")
+
             id_val = attr.get('id')
             id_hex = f"{id_val:02X}"
             name = attr.get("name", "Unknown").replace("_", " ")
@@ -862,23 +1095,15 @@ class DiskDetailsWindow(ctk.CTkToplevel):
             status_icon = "✔ OK"
             if status == "CRIT":
                 status_fg = "#e74c3c" # Red
-                status_icon = "✖ Fail"
+                status_icon = "✖ " + note
             elif status == "WARN":
                 status_fg = "#f39c12" # Orange
-                status_icon = "⚠ Warn"
-            
+                status_icon = "⚠ " + note
+                
             # Check for NVMe critical warning special case
             if name == "Critical Warning" and raw_val > 0:
                  status_fg = "#e74c3c"
-                 status_icon = "✖ Fail"
-
-            # Alternate row colors
-            row_bg = "transparent"
-            if idx % 2 == 1:
-                row_bg = ("#e5e5e5", "#333333") # Light/Dark mode gray
-            
-            row_frame = ctk.CTkFrame(table_scroll, fg_color=row_bg, corner_radius=0)
-            row_frame.grid(row=grid_row, column=0, columnspan=7, sticky="ew")
+                 status_icon = "✖ Failure Predicted"
             
             # Reconstruct grid relative to the row frame
             for i in range(7): row_frame.grid_columnconfigure(i, weight=1)
@@ -896,6 +1121,7 @@ class DiskDetailsWindow(ctk.CTkToplevel):
                 
                 lbl.grid(row=0, column=c_idx, sticky="ew", padx=2, pady=1)
                 
+
                 # Add tooltip for status if warning
                 if c_idx == 1 and status != "OK":
                      ToolTip(lbl, note)

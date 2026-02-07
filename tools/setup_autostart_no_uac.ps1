@@ -1,24 +1,41 @@
-$ErrorActionPreference = "Stop"
+try {
+    $ErrorActionPreference = "Stop"
+    
+    $ScriptRoot = $PSScriptRoot
+    if (-not $ScriptRoot) { $ScriptRoot = $pwd.Path }
+    
+    # Calculate absolute paths
+    $Root = (Resolve-Path "$ScriptRoot\..").Path
+    $MainPy = Join-Path $Root "src\main.py"
+    $PythonW = Join-Path $Root ".venv\Scripts\pythonw.exe"
 
-$ActionName = "DiskMonitor"
-$ScriptPath = Resolve-Path "$PSScriptRoot\..\src\main.py"
-$PythonWPath = Resolve-Path "$PSScriptRoot\..\.venv\Scripts\pythonw.exe"
+    if (-not (Test-Path $MainPy)) { throw "Could not find src\main.py at $MainPy" }
+    if (-not (Test-Path $PythonW)) { throw "Could not find pythonw.exe at $PythonW" }
 
-# Create action
-$Action = New-ScheduledTaskAction -Execute $PythonWPath -Argument "`"$ScriptPath`""
+    Write-Host "Registering task for user: $env:USERNAME"
+    Write-Host "Python: $PythonW"
+    Write-Host "Script: $MainPy"
 
-# Create trigger (At Log On)
-$Trigger = New-ScheduledTaskTrigger -AtLogOn
+    # Create action
+    $Action = New-ScheduledTaskAction -Execute $PythonW -Argument "`"$MainPy`""
 
-# Principal (Run as current user, with Highest Privileges)
-$Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+    # Create trigger (At Log On)
+    $Trigger = New-ScheduledTaskTrigger -AtLogOn
 
-# Settings (Hidden, Highest Privileges to bypass UAC)
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    # Principal (Run as current user, with Highest Privileges)
+    $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 
-# Register with Highest Privileges
-Register-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -TaskName "DiskMonitorAutoStart" -Description "Starts DiskMonitor with Admin rights at login." -Force
+    # Settings
+    $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 0)
 
-Write-Host "Task 'DiskMonitorAutoStart' created successfully."
-Write-Host "The application will now start automatically at login WITHOUT a UAC prompt."
-Write-Host "You can also run it manually from Task Scheduler."
+    # Register
+    Register-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -TaskName "DiskMonitorAutoStart" -Description "Starts DiskMonitor with Admin rights at login." -Force
+
+    Write-Host "SUCCESS: Task 'DiskMonitorAutoStart' created."
+}
+catch {
+    Write-Host "ERROR: $_" -ForegroundColor Red
+}
+
+Write-Host "Press Enter to close..."
+Read-Host
