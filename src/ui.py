@@ -118,7 +118,9 @@ class DiskMonitorApp:
     def _run_tray(self):
         image = self._create_icon("green")
         menu = pystray.Menu(
-            pystray.MenuItem("Dashboard", self.show_dashboard),
+            pystray.MenuItem("Disk Health Monitor", None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Dashboard", self.show_dashboard, default=True),
             pystray.MenuItem("Exit", self.exit_app)
         )
         self.icon = pystray.Icon("DiskMonitor", image, "Disk Health: OK", menu)
