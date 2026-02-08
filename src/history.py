@@ -28,6 +28,12 @@ class DiskHistory:
         except sqlite3.OperationalError:
             pass # Already exists
 
+        # Migration: Add write_errors if missing
+        try:
+            c.execute("ALTER TABLE disk_stats ADD COLUMN write_errors INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass # Already exists
+
         c.execute("""
             CREATE INDEX IF NOT EXISTS idx_serial_time 
             ON disk_stats (serial_number, timestamp)
@@ -35,14 +41,14 @@ class DiskHistory:
         conn.commit()
         conn.close()
 
-    def log_status(self, serial, rsc, read_err, hours, pending, io_load=0.0):
+    def log_status(self, serial, rsc, read_err, hours, pending, io_load=0.0, write_err=0):
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("""
             INSERT INTO disk_stats 
-            (serial_number, timestamp, reallocated_sectors, read_errors, power_on_hours, pending_sectors, io_load)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (serial, datetime.datetime.now(), rsc, read_err, hours, pending, io_load))
+            (serial_number, timestamp, reallocated_sectors, read_errors, power_on_hours, pending_sectors, io_load, write_errors)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (serial, datetime.datetime.now(), rsc, read_err, hours, pending, io_load, write_err))
         conn.commit()
         conn.close()
         
@@ -129,12 +135,23 @@ class DiskHistory:
             rsc_diff = current['reallocated_sectors'] - prev['reallocated_sectors']
             read_diff = current['read_errors'] - prev['read_errors']
             
+            # Check for write errors if column exists
+            write_diff = 0
+            if 'write_errors' in current.keys() and 'write_errors' in prev.keys():
+                 # Handle None
+                 cur_w = current['write_errors'] or 0
+                 prev_w = prev['write_errors'] or 0
+                 write_diff = cur_w - prev_w
+
             if rsc_diff > 0:
                 result["status"] = "CRITICAL"
                 result["messages"].append(f"New Reallocated Sectors detected! (+{rsc_diff})")
             
             if read_diff > 0:
                  result["messages"].append(f"New Read Errors detected! (+{read_diff})")
+
+            if write_diff > 0:
+                 result["messages"].append(f"New Write Errors detected! (+{write_diff})")
 
         # Absolute thresholds
         if current['reallocated_sectors'] > 0:

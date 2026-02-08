@@ -545,7 +545,7 @@ class DiskMonitorApp:
                     serial = data.get("serial_number") or device_info.get("serial_number") or "Unknown"
                     
                     # Extract attributes
-                    rsc, read_err, pending = 0, 0, 0
+                    rsc, read_err, pending, write_err = 0, 0, 0, 0
                     
                     # Try Parsing standard ATA attributes
                     table = data.get("ata_smart_attributes", {}).get("table", [])
@@ -556,6 +556,7 @@ class DiskMonitorApp:
                         if id_ == 5: rsc = raw_val
                         elif id_ == 1: read_err = raw_val
                         elif id_ == 197: pending = raw_val
+                        elif id_ == 200: write_err = raw_val # Write Error Rate / Multi Zone Error Rate
                     
                     hours = data.get("power_on_time", {}).get("hours", 0)
                     
@@ -568,12 +569,12 @@ class DiskMonitorApp:
 
                     # Log to history
                     if serial != "Unknown":
-                        self.history.log_status(serial, rsc, read_err, hours, pending, io_load)
+                        self.history.log_status(serial, rsc, read_err, hours, pending, io_load, write_err)
                         
                         # Analyze
                         analysis = self.history.analyze_trend(serial)
                         data["analysis"] = analysis
-                        data["stats"] = {"rsc": rsc, "read_err": read_err, "pending": pending}
+                        data["stats"] = {"rsc": rsc, "read_err": read_err, "pending": pending, "write_err": write_err}
                         
                         if analysis["status"] != "OK":
                             overall_status = "yellow" # Warning state
